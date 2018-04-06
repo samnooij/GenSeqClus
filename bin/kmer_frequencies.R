@@ -27,7 +27,8 @@ for (kmer in kmers) {
   kmer_df <- kmer_df[c(ncol(kmer_df), 1:ncol(kmer_df) - 1)]
   
   # Save the kmer-count dataframe to a file:
-  output_file <- snakemake@output[[kmer]][1]
+  index <- which(kmers == kmer)
+  output_file <- snakemake@output[[index]][1]
   print(paste("Now writing to file:", output_file))
   write.table(x = kmer_df, file = output_file, sep = ",", row.names = FALSE, col.names = TRUE)
 }
