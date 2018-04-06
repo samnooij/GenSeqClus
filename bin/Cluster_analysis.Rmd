@@ -1,0 +1,523 @@
+---
+title: "Cluster analysis"
+author: "Sam Nooij"
+date: "16 March 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+## Cluster analysis of viral sequences using similarity, composition and phylogeny
+
+### Inspired by [PASC](https://doi.org/10.1007/s00705-014-2197-x), [NVR](https://doi.org/10.1371/journal.pone.0064328) and [DEmARC](http://dx.doi.org/10.1128%2FJVI.07173-11)
+
+Three different methods are used to calculate distances between sequences. 'Similarity' is based on all-vs.-all BLAST, i.e. local pairwise alignments of sequences. The reported identity score is used (distance = 100 - identity) for calculating distances. 'Composition' is based on [NVR](https://doi.org/10.1371/journal.pone.0064328) and calculates 12 different metrics of composition of each sequence: frequency of each nucleotide, mean position of each nucleotide and central moment of each nucleotide (see the [publication](https://doi.org/10.1371/journal.pone.0064328) and/or attached script for details). Finally, 'phylogeny' uses a maximum likelihood phylogeny to calculate evolutionary distances between the sequences. This method is based on [DEmARC](http://dx.doi.org/10.1128%2FJVI.07173-11).
+
+When distances between sequences have been calculated, we calculate clusters by several different methods.
+[Short description of clustering methods and how optima are determined.]
+
+Below are the results of the calculations, visualised as tables and figures.
+
+---
+
+```{r import.data}
+library(reshape2) #for melt()
+library(RColorBrewer) #for brewer.pal()
+
+blast.file <- snakemake@input[[1]]
+nvr.file <- snakemake@input[[2]]
+aa.phyl.file <- snakemake@input[[3]]
+nt.phyl.file <- snakemake@input[[4]]
+aa.clean.phyl.file <- snakemake@input[[5]]
+meta.file <- snakemake@input[[6]]
+
+#Colour palette for alternating (easy to distinguish when 
+# side-by-side) colours
+colour.palette <- c("#000000","#FFFF00","#1CE6FF","#FF34FF","#FF4A46","#008941","#006FA6","#A30059",
+  "#FFDBE5","#7A4900","#0000A6","#63FFAC","#B79762","#004D43","#8FB0FF","#997D87",
+  "#5A0007","#809693","#FEFFE6","#1B4400","#4FC601","#3B5DFF","#4A3B53","#FF2F80",
+  "#61615A","#BA0900","#6B7900","#00C2A0","#FFAA92","#FF90C9","#B903AA","#D16100",
+  "#DDEFFF","#000035","#7B4F4B","#A1C299","#300018","#0AA6D8","#013349","#00846F",
+  "#372101","#FFB500","#C2FFED","#A079BF","#CC0744","#C0B9B2","#C2FF99","#001E09",
+  "#00489C","#6F0062","#0CBD66","#EEC3FF","#456D75","#B77B68","#7A87A1","#788D66",
+  "#885578","#FAD09F","#FF8A9A","#D157A0","#BEC459","#456648","#0086ED","#886F4C",
+  "#34362D","#B4A8BD","#00A6AA","#452C2C","#636375","#A3C8C9","#FF913F","#938A81",
+  "#575329","#00FECF","#B05B6F","#8CD0FF","#3B9700","#04F757","#C8A1A1","#1E6E00",
+  "#7900D7","#A77500","#6367A9","#A05837","#6B002C","#772600","#D790FF","#9B9700",
+  "#549E79","#FFF69F","#201625","#72418F","#BC23FF","#99ADC0","#3A2465","#922329",
+  "#5B4534","#FDE8DC","#404E55","#0089A3","#CB7E98","#A4E804","#324E72","#6A3A4C",
+  "#83AB58","#001C1E","#D1F7CE","#004B28","#C8D0F6","#A3A489","#806C66","#222800",
+  "#BF5650","#E83000","#66796D","#DA007C","#FF1A59","#8ADBB4","#1E0200","#5B4E51",
+  "#C895C5","#320033","#FF6832","#66E1D3","#CFCDAC","#D0AC94","#7ED379","#012C58",
+  "#7A7BFF","#D68E01","#353339","#78AFA1","#FEB2C6","#75797C","#837393","#943A4D",
+  "#B5F4FF","#D2DCD5","#9556BD","#6A714A","#001325","#02525F","#0AA3F7","#E98176",
+  "#DBD5DD","#5EBCD1","#3D4F44","#7E6405","#02684E","#962B75","#8D8546","#9695C5",
+  "#E773CE","#D86A78","#3E89BE","#CA834E","#518A87","#5B113C","#55813B","#E704C4",
+  "#00005F","#A97399","#4B8160","#59738A","#FF5DA7","#F7C9BF","#643127","#513A01",
+  "#6B94AA","#51A058","#A45B02","#1D1702","#E20027","#E7AB63","#4C6001","#9C6966",
+  "#64547B","#97979E","#006A66","#391406","#F4D749","#0045D2","#006C31","#DDB6D0",
+  "#7C6571","#9FB2A4","#00D891","#15A08A","#BC65E9","#FFFFFE","#C6DC99","#203B3C",
+  "#671190","#6B3A64","#F5E1FF","#FFA0F2","#CCAA35","#374527","#8BB400","#797868",
+  "#C6005A","#3B000A","#C86240","#29607C","#402334","#7D5A44","#CCB87C","#B88183",
+  "#AA5199","#B5D6C3","#A38469","#9F94F0","#A74571","#B894A6","#71BB8C","#00B433",
+  "#789EC9","#6D80BA","#953F00","#5EFF03","#E4FFFC","#1BE177","#BCB1E5","#76912F",
+  "#003109","#0060CD","#D20096","#895563","#29201D","#5B3213","#A76F42","#89412E",
+  "#1A3A2A","#494B5A","#A88C85","#F4ABAA","#A3F3AB","#00C6C8","#EA8B66","#958A9F",
+  "#BDC9D2","#9FA064","#BE4700","#658188","#83A485","#453C23","#47675D","#3A3F00",
+  "#061203","#DFFB71","#868E7E","#98D058","#6C8F7D","#D7BFC2","#3C3E6E","#D83D66",
+  "#2F5D9B","#6C5E46","#D25B88","#5B656C","#00B57F","#545C46","#866097","#365D25",
+  "#252F99","#00CCFF","#674E60","#FC009C","#92896B")
+#Same colour palette, sorted by hue (so that similar colours may be used)
+#For easy reference:
+#   1-50    reddish-purple
+#   51-100  purple-blue
+#   100-150 bluegreen-green
+#   150-200 green-yellow
+#   200-250 orange-brown
+hue.sorted.palette <- c("#B88183", "#922329", "#5A0007", "#D7BFC2", "#D86A78", "#FF8A9A", "#3B000A", "#E20027",
+  "#943A4D", "#5B4E51", "#B05B6F", "#FEB2C6", "#D83D66", "#895563", "#FF1A59", "#FFDBE5",
+  "#CC0744", "#CB7E98", "#997D87", "#6A3A4C", "#FF2F80", "#6B002C", "#A74571", "#C6005A",
+  "#FF5DA7", "#300018", "#B894A6", "#FF90C9", "#7C6571", "#A30059", "#DA007C", "#5B113C",
+  "#402334", "#D157A0", "#DDB6D0", "#885578", "#962B75", "#A97399", "#D20096", "#E773CE",
+  "#AA5199", "#E704C4", "#6B3A64", "#FFA0F2", "#6F0062", "#B903AA", "#C895C5", "#FF34FF", 
+  "#320033", "#DBD5DD", "#EEC3FF", "#BC23FF", "#671190", "#201625", "#F5E1FF", "#BC65E9", 
+  "#D790FF", "#72418F", "#4A3B53", "#9556BD", "#B4A8BD", "#7900D7", "#A079BF", "#958A9F", 
+  "#837393", "#64547B", "#3A2465", "#353339", "#BCB1E5", "#9F94F0", "#9695C5", "#0000A6", 
+  "#000035", "#636375", "#00005F", "#97979E", "#7A7BFF", "#3C3E6E", "#6367A9", "#494B5A", 
+  "#3B5DFF", "#C8D0F6", "#6D80BA", "#8FB0FF", "#0045D2", "#7A87A1", "#324E72", "#00489C", 
+  "#0060CD", "#789EC9", "#012C58", "#99ADC0", "#001325", "#DDEFFF", "#59738A", "#0086ED", 
+  "#75797C", "#BDC9D2", "#3E89BE", "#8CD0FF", "#0AA3F7", "#6B94AA", "#29607C", "#404E55", 
+  "#006FA6", "#013349", "#0AA6D8", "#658188", "#5EBCD1", "#456D75", "#0089A3", "#B5F4FF", 
+  "#02525F", "#1CE6FF", "#001C1E", "#203B3C", "#A3C8C9", "#00A6AA", "#00C6C8", "#006A66", 
+  "#518A87", "#E4FFFC", "#66E1D3", "#004D43", "#809693", "#15A08A", "#00846F", "#00C2A0", 
+  "#00FECF", "#78AFA1", "#02684E", "#C2FFED", "#47675D", "#00D891", "#004B28", "#8ADBB4", 
+  "#0CBD66", "#549E79", "#1A3A2A", "#6C8F7D", "#008941", "#63FFAC", "#1BE177", "#006C31", 
+  "#B5D6C3", "#3D4F44", "#4B8160", "#66796D", "#71BB8C", "#04F757", "#001E09", "#D2DCD5", 
+  "#00B433", "#9FB2A4", "#003109", "#A3F3AB", "#456648", "#51A058", "#83A485", "#7ED379", 
+  "#D1F7CE", "#A1C299", "#061203", "#1E6E00", "#5EFF03", "#55813B", "#3B9700", "#4FC601", 
+  "#1B4400", "#C2FF99", "#788D66", "#868E7E", "#83AB58", "#374527", "#98D058", "#C6DC99", 
+  "#A4E804", "#76912F", "#8BB400", "#34362D", "#4C6001", "#DFFB71", "#6A714A", "#222800", 
+  "#6B7900", "#3A3F00", "#BEC459", "#FEFFE6", "#A3A489", "#9FA064", "#FFFF00", "#61615A", 
+  "#FFFFFE", "#9B9700", "#CFCDAC", "#797868", "#575329", "#FFF69F", "#8D8546", "#F4D749", 
+  "#7E6405", "#1D1702", "#CCAA35", "#CCB87C", "#453C23", "#513A01", "#FFB500", "#A77500", 
+  "#D68E01", "#B79762", "#7A4900", "#372101", "#886F4C", "#A45B02", "#E7AB63", "#FAD09F", 
+  "#C0B9B2", "#938A81", "#A38469", "#D16100", "#A76F42", "#5B4534", "#5B3213", "#CA834E", 
+  "#FF913F", "#953F00", "#D0AC94", "#7D5A44", "#BE4700", "#FDE8DC", "#772600", "#A05837", 
+  "#EA8B66", "#391406", "#FF6832", "#C86240", "#29201D", "#B77B68", "#806C66", "#FFAA92", 
+  "#89412E", "#E83000", "#A88C85", "#F7C9BF", "#643127", "#E98176", "#7B4F4B", "#1E0200", 
+  "#9C6966", "#BF5650", "#BA0900", "#FF4A46", "#F4ABAA", "#000000", "#452C2C", "#C8A1A1")
+heatmap.colours <- colorRampPalette(brewer.pal(7, "RdYlBu"))(100)
+
+read.blast.file <- function(input.file) {
+    #Open the blast output file
+    df <- read.csv(file = input.file, sep = "\t", header = FALSE)
+
+    #Assign human-readable column names
+    column.names <-  c("query", "target", "identity", 
+    "length", "mismatches", "gap.openings", "q.start", 
+    "q.end", "t.start", "t.end", "evalue", "bit.score")
+    colnames(df) <- column.names
+
+    #Add a column with BLAST distances
+    df <- within(df, blast.distance <- 100 - identity)
+    
+    return(df)
+}
+#    input: blast tabular output
+#    output: df
+
+read.nvr.file <- function(input.file) {
+  #Open the file as first as dataframe
+  nvr <- read.csv(file = input.file, header = TRUE, sep = ',')
+  #Calculate distances and put in a matrix
+  dist.mat <- as.matrix(dist(x = nvr, method = "euclidian"))
+  #Add appropriate names (and change | to _)
+  colnames(dist.mat) <- gsub("\\|", "\\_", nvr$name)
+  rownames(dist.mat) <- gsub("\\|", "\\_", nvr$name)
+  
+  #And convert to dataframe
+  nvr.df <- melt(dist.mat)
+
+  return(nvr.df)
+}
+    #input: csv file
+    #output: df
+
+read.iqtree.distmat <- function(input.file) {
+    #Open the file as matrix
+    dist.mat <- read.csv(file = input.file, header = FALSE, sep = "", skip = 1, row.names = 1)
+    colnames(dist.mat) <- rownames(dist.mat)
+    #And convert to dataframe
+    df <- melt(as.matrix(dist.mat))
+    
+    return(df)
+}
+#    input: space-separated distance matrix (maximum likelihood)
+#    output: matrix & df
+
+read.metadata <- function(input.file) {
+    meta.df <- read.csv(file = input.file, sep = "\t", header = TRUE)
+
+    return(meta.df)
+}
+
+merge.dataframes <- function(blast, nvr, aa.phyl, nt.phyl, aa.clean.phyl, meta) {
+  #First merger: blast output + metadata
+  bl.meta <- merge.data.frame(x = blast, y = meta, by.x = "query", by.y = "accession_id", all = FALSE)
+
+  #Merge (add NVR) and rename column
+  bl.meta.nvr <- merge.data.frame(x = bl.meta, y = nvr, by.x = c("query", "target"), by.y = c("Var1", "Var2"))
+  colnames(bl.meta.nvr)[colnames(bl.meta.nvr) == "value"] <- "nvr.distance"
+  
+  #Merge (add aa phylogeny) and rename column
+  bl.meta.nvr.aa <- merge.data.frame(x = bl.meta.nvr, y = aa.phyl, by.x = c("query", "target"), by.y = c("Var1", "Var2"))
+  colnames(bl.meta.nvr.aa)[colnames(bl.meta.nvr.aa) == "value"] <- "aa.phyl.distance"
+  
+  #Merge (add nt (CDS) phylogeny) and rename column
+  bl.meta.nvr.aa.nt <- merge.data.frame(x = bl.meta.nvr.aa, y = nt.phyl, by.x = c("query", "target"), by.y = c("Var1", "Var2"))
+  colnames(bl.meta.nvr.aa.nt)[colnames(bl.meta.nvr.aa.nt) == "value"] <- "nt.phyl.distance"
+  
+  #Merge (add cleaned aa phylogeny) and rename column
+  bl.meta.nvr.aa.nt.aacl <- merge.data.frame(x = bl.meta.nvr.aa.nt, y = aa.clean.phyl, by.x = c("query", "target"), by.y = c("Var1", "Var2"))
+  colnames(bl.meta.nvr.aa.nt.aacl)[colnames(bl.meta.nvr.aa.nt.aacl) == "value"] <- "aa.clean.phyl.distance"
+
+  return(bl.meta.nvr.aa.nt.aacl)
+}
+blast.df <- read.blast.file(blast.file)
+nvr.df <- read.nvr.file(nvr.file)
+aa.phyl.df <- read.iqtree.distmat(aa.phyl.file)
+nt.phyl.df <- read.iqtree.distmat(nt.phyl.file)
+aa.clean.phyl.df <- read.iqtree.distmat(aa.clean.phyl.file)
+meta.df <- read.metadata(meta.file)
+
+distances.df <- merge.dataframes(
+  blast.df,
+  nvr.df,
+  aa.phyl.df,
+  nt.phyl.df,
+  aa.clean.phyl.df,
+  meta.df
+)
+```
+
+```{r calculate.clusters}
+library(fpc) #for cluster.stats()
+
+convert.to.matrix <- function(df, dist) {
+  dist.mat <- acast(data = df[, c("query", "target", dist)],
+    formula = query ~ target, fun.aggregate = mean)
+  
+  return(dist.mat)
+}
+
+#Find 'plateaus' or optima in the 'clusters/cutoff-curve'
+find.consecutives <- function(x, k = 5) {
+  #Find the length of vector x
+  n <- length(x)
+  #Create an empty object for end points
+  plateau.values <- NULL
+  #Loop over x, from start+5 to k
+  for (i in k:n) {
+    #if 5 or more elements before i are equal to i, save the endpoint
+    if (all(x[(i-k):i] == x[i])) {
+      plateau.values <- c(plateau.values, x[(i-k):i])
+    }
+  }
+
+  return(plateau.values)
+}
+
+single.linkage.clustering <- function(df, dist) {
+#input: dataframe, distance measure
+#output: plot with marked plateaus/optima, dataframe with cluster statistics
+  dist.mat <- convert.to.matrix(df, dist)
+  
+  sl.clustering <- hclust(dist(dist.mat), method = "single")
+  
+  #Set the maximum distance to be used as cutoff
+  max.dist <- ceiling(max(df[dist]))
+  
+  #Select step sizes accordingly
+  if (max.dist > 1000) {
+    step.size <- 100
+  } else if (max.dist > 40) {
+    step.size <- 1
+  } else if (max.dist > 4) {
+    step.size <- .1
+  } else {
+    step.size <- .05
+  }
+  
+  number.of.steps <- max.dist / step.size
+  
+  #Check the number of clusters for each selected cutoff value
+  step <- 1
+  
+  #Prepare a matrix to hold the results
+  cluster.analysis.mat <- matrix(nrow = number.of.steps + 1, ncol = 10)
+  
+  for (cutoff in seq(from = 0, to = max.dist, by = step.size)) {
+    tree.cut <- cutree(sl.clustering, h = cutoff) 
+    
+    clustering.accordance <- calculate.clustering.accordance(tree.cut)
+
+    #Note that quality is *per cluster* and cost *sums* the cost over all clusters,
+    # so this function should be calculated per cluster, and summed.
+    # Besides, recording qualities makes little sense if you report only 1 number.
+    clustering.quality.cost <- calculate.cluster.quality.cost(dist = dist, clusters = tree.cut, cutoff = cutoff)
+    #Make sure to pass "distances" as a vector of numeric values!
+    clustering.cost <- clustering.quality.cost[[3]] #a single number
+    clustering.quality <- clustering.quality.cost[c("cluster", "quality")] #a data frame of clusternumber - quality
+    
+    clustering.statistics <- calculate.cluster.statistics(dist.mat = dist.mat, cl.numbers = tree.cut)
+    avg.size <- clustering.statistics$avg.size
+    median.size <- clustering.statistics$median.size
+    average.between <- clustering.statistics$average.between
+    average.within <- clustering.statistics$average.within
+    dunn.index <- clustering.statistics$dunn.index
+    dunn2.index <- clustering.statistics$dunn2.index
+    number.of.clusters <- max(tree.cut)
+    
+    #Write the information to the result table
+    cluster.analysis.mat[step, 1] <- cutoff
+    cluster.analysis.mat[step, 2] <- number.of.clusters
+    cluster.analysis.mat[step, 3] <- avg.size
+    cluster.analysis.mat[step, 4] <- median.size
+    cluster.analysis.mat[step, 5] <- average.between
+    cluster.analysis.mat[step, 6] <- average.within
+    cluster.analysis.mat[step, 7] <- dunn.index
+    cluster.analysis.mat[step, 8] <- dunn2.index
+    cluster.analysis.mat[step, 9] <- clustering.accordance
+    cluster.analysis.mat[step, 10] <- clustering.cost
+
+    step <- step + 1
+  }
+  
+  #Write the results to a dataframe
+  cluster.analysis.df <- data.frame(cluster.analysis.mat)
+  colnames(cluster.analysis.df) <- c("cutoff", "number.of.clusters",
+    "average.size", "median.size", "average.between.distance", "average.within.distance",
+    "dunn.index", "dunn2.index","clustering.accordance", "clustering.cost")
+
+  return(cluster.analysis.df)
+}
+
+calculate.cluster.statistics <- function(dist.mat, cl.numbers) {
+#input: distance matrix (as used in the clustering)
+#       cluster numbers (e.g. the output of cutree, or the 'cluster' column from a kmeans-output dataframe)
+#output: list (dataframe)  of statistics:
+#       avg cluster size, median size, avg between dist, avg within dist, dunn index (x2)
+
+  #Work-around for 'unclusterable' numbers:
+  # check if cl.numbers is as long as dist.mat
+  # (i.e. all sequences form their own cluster)
+  # If it is, use cluster.stats(silhouette = FALSE)
+  # (this will yield the same results, except "average.within" will be NaN)
+  # else: proceed with the normal function
+  
+  if (length(cl.numbers) == length(rownames(dist.mat))) {
+    statistics <- cluster.stats(d = dist.mat, clustering = cl.numbers, silhouette = FALSE)
+  } else {
+    statistics <- cluster.stats(d = dist.mat, clustering = cl.numbers)
+  }
+  
+  # Calculate the statistics:
+  avg.size <- mean(statistics$cluster.size)
+  median.size <- median(statistics$cluster.size)
+  
+  stats.df <- as.data.frame(c(avg.size, median.size, 
+    statistics[c("average.between", "average.within", "dunn", "dunn2")]))
+  
+  colnames(stats.df) <- c("avg.size", "median.size", "average.between", "average.within", "dunn.index", "dunn2.index")
+  
+  return(stats.df)
+}
+
+calculate.clustering.accordance <- function(tree.cut) {
+  df <- as.data.frame(tree.cut)
+  
+  df$query <- as.factor(rownames(df))
+  df <- merge(df, distances.df[c("query", "genogroup")], by = "query")
+  colnames(df)[colnames(df) == "tree.cut"] <- "cluster"
+
+  no.clusters <- max(df$cluster)
+  no.groups <- length(levels(df$genogroup))
+  
+  if (no.groups <= no.clusters) {
+    agg <- aggregate(cluster ~ genogroup, df, paste)
+    X <- sum(rapply(agg$cluster, check.identical))
+    Y <- no.groups - X
+    Z <- no.clusters - X
+  } else {
+    agg <- aggregate(genogroup ~ cluster, df, paste)
+    X <- sum(rapply(agg$genogroup, check.identical))
+    Y <- no.groups - X
+    Z <- no.clusters - X
+  }
+  
+  clustering.accordance <- X / (Y + X + Z)
+  
+  return(clustering.accordance)
+}
+
+check.identical <- function(list) {
+  if (length(levels(as.factor(list))) == 1) {
+    identical <- TRUE
+  } else {
+    identical <- FALSE
+  }
+  
+  return(identical)
+}
+
+fetch.cluster.distances <- function(tree.cut, distance) {
+  df <- as.data.frame(tree.cut)
+  colnames(df) <- "cluster"
+  df$accession <- rownames(df)
+  aggregated.df <- aggregate(accession ~ cluster, df, paste)
+  
+  grab.distances <- function(accessions) {
+    distances <- convert.to.matrix(distances.df, distance)[accessions, accessions]
+    return(distances)
+  }
+  
+  distance.list <- lapply(aggregated.df$accession, FUN = grab.distances)
+  # aggregate the rownames (IDs) per cluster number (look at above function)
+  # use the IDs to extract distances from the original dataframe (using the distance metric provided to the function)
+  # return: a list of distance lists(?) or matrices?
+  return(distance.list)
+}
+
+#Note: For cluster quality, these distances should be intragroup distances!
+# (i.e. within distances) This score counts *per cluster*, so reporting
+# a single CQ per cutoff is useless.
+calculate.cluster.quality.cost <- function(dist, clusters, cutoff) {
+  ##dist = column required from overall dataframe
+  ##clusters = cluster numbers as assigned by hclust/cutree
+  ##cutoff = cutoff value between clusters, used for counting violations
+  number.of.clusters <- max(clusters)
+  
+  #Failsafe for when cutoff = 0 (which is meaningless)
+  if (cutoff == 0){
+    return(c(data.frame(cluster = 1:number.of.clusters, quality = number.of.clusters * 0), NaN))
+  } else {
+    #Initiate a dataframe for storing quality scores
+    cluster.qualities <- data.frame(cluster = 1:number.of.clusters, quality = number.of.clusters * NaN)
+  
+    #Start the calculations per cluster
+    for (cluster in 1:number.of.clusters) {
+      accession.ids <- attr(which(clusters == cluster), "names")
+      #List all accession IDs in a cluster by finding ('which') all
+      # "names" attributes that match cluster number 'cluster'
+      within.distances <- subset(distances.df, query %in% accession.ids & target %in% accession.ids, dist)[,1]
+      #Within-cluster distances is the subset of distances 
+      # for which "query" and "target" match the accession IDs.
+      #The object is turned to number only by appending [,1]
+      # (instead of a dataframe)
+      number.of.comparisons <- length(within.distances)
+      
+        ### Algorithm explained: ###
+    #Sort the distances from large to small
+    #Check if the number is greater than the cutoff (= violation)
+    #  if not: break the loop (don't waste time)
+    #  if greater: found a violation
+      sorted.distances <- sort(within.distances, decreasing = TRUE)
+      violations <- 0
+      cluster.cost <- 0
+      for (n in sorted.distances) {
+        if (n < cutoff) {
+          break
+        } else {
+          violations <- violations + 1
+          cluster.cost <- cluster.cost + ((n - cutoff) / cutoff)
+        }
+      }
+      #Calculate per-cluster quality
+      cluster.quality <- 1 - violations / number.of.comparisons
+      #And write it to the dataframe of collected qualities
+      cluster.qualities$quality[cluster] <- cluster.quality
+    }
+  }
+  
+  return(c(cluster.qualities, cluster.cost))
+  #Output = dataframe of qualities (per cluster), summed up cost
+}
+
+blast.cluster.analysis <- single.linkage.clustering(df = distances.df, dist = "blast.distance")
+blast.optimal.cluster.numbers <- unique(find.consecutives(x = blast.cluster.analysis$number.of.clusters))
+blast.plateau.cutoffs <- subset(blast.cluster.analysis, number.of.clusters %in% blast.optimal.cluster.numbers, cutoff)[[1]]
+
+nvr.cluster.analysis <- single.linkage.clustering(distances.df, "nvr.distance")
+nvr.optimal.cluster.numbers <- unique(find.consecutives(x = nvr.cluster.analysis$number.of.clusters))
+nvr.plateau.cutoffs <- subset(nvr.cluster.analysis, number.of.clusters %in% nvr.optimal.cluster.numbers, cutoff)[[1]]
+
+aa.phyl.cluster.analysis <- single.linkage.clustering(distances.df, "aa.phyl.distance")
+aa.phyl.optimal.cluster.numbers <- unique(find.consecutives(x = aa.phyl.cluster.analysis$number.of.clusters))
+aa.phyl.plateau.cutoffs <- subset(aa.phyl.cluster.analysis, number.of.clusters %in% aa.phyl.optimal.cluster.numbers, cutoff)[[1]]
+
+nt.phyl.cluster.analysis <- single.linkage.clustering(distances.df, "nt.phyl.distance")
+nt.phyl.optimal.cluster.numbers <- unique(find.consecutives(x = nt.phyl.cluster.analysis$number.of.clusters))
+nt.phyl.plateau.cutoffs <- subset(nt.phyl.cluster.analysis, number.of.clusters %in% nt.phyl.optimal.cluster.numbers, cutoff)[[1]]
+
+aa.clean.phyl.cluster.analysis <- single.linkage.clustering(distances.df, "aa.clean.phyl.distance")
+aa.clean.phyl.optimal.cluster.numbers <- unique(find.consecutives(x = aa.clean.phyl.cluster.analysis$number.of.clusters))
+aa.clean.phyl.plateau.cutoffs <- subset(aa.clean.phyl.cluster.analysis, number.of.clusters %in% aa.clean.phyl.optimal.cluster.numbers, cutoff)[[1]]
+
+```
+
+---
+## Appendix: extra figures
+
+### Appendix I: plateau plots
+
+```{r extra.figures}
+library(ggplot2)
+
+blast.plateau <- ggplot(data = blast.cluster.analysis) + 
+  geom_line(aes(x = cutoff, y = number.of.clusters)) +
+  geom_point(aes(x = cutoff, y = number.of.clusters, col = "red")) +
+  labs(x = "Cutoff", y = "Number of clusters", title = "Blast distances") +
+  theme(legend.position = "none")
+
+blast.plateau + geom_vline(xintercept = blast.plateau.cutoffs, linetype="dashed", alpha = .3, size = .3) +
+  geom_hline(yintercept = blast.optimal.cluster.numbers, linetype="dashed", alpha = .3, size = .3)
+
+nvr.plateau <- ggplot(data = nvr.cluster.analysis) + 
+  geom_line(aes(x = cutoff, y = number.of.clusters)) +
+  geom_point(aes(x = cutoff, y = number.of.clusters, col = "red")) +
+  labs(x = "Cutoff", y = "Number of clusters", title = "NVR distances") +
+  theme(legend.position = "none")
+
+nvr.plateau + geom_vline(xintercept = nvr.plateau.cutoffs, linetype="dashed", alpha = .3, size = .3) +
+  geom_hline(yintercept = nvr.optimal.cluster.numbers, linetype="dashed", alpha = .3, size = .3)
+
+aa.phyl.plateau  <- ggplot(data = aa.phyl.cluster.analysis) + 
+  geom_line(aes(x = cutoff, y = number.of.clusters)) +
+  geom_point(aes(x = cutoff, y = number.of.clusters, col = "red")) +
+  labs(x = "Cutoff", y = "Number of clusters", title = "Phylogenetic distances (amino acids)") +
+  theme(legend.position = "none")
+
+aa.phyl.plateau + geom_vline(xintercept = aa.phyl.plateau.cutoffs, linetype="dashed", alpha = .3, size = .3) +
+  geom_hline(yintercept = aa.phyl.optimal.cluster.numbers, linetype="dashed", alpha = .3, size = .3)
+
+nt.phyl.plateau  <- ggplot(data = nt.phyl.cluster.analysis) + 
+  geom_line(aes(x = cutoff, y = number.of.clusters)) +
+  geom_point(aes(x = cutoff, y = number.of.clusters, col = "red")) +
+  labs(x = "Cutoff", y = "Number of clusters", title = "Phylogenetic distances (nucleotides/coding sequences") +
+  theme(legend.position = "none")
+
+nt.phyl.plateau + geom_vline(xintercept = nt.phyl.plateau.cutoffs, linetype="dashed", alpha = .3, size = .3) +
+  geom_hline(yintercept = nt.phyl.optimal.cluster.numbers, linetype="dashed", alpha = .3, size = .3)
+
+aa.clean.phyl.plateau  <- ggplot(data = aa.clean.phyl.cluster.analysis) + 
+  geom_line(aes(x = cutoff, y = number.of.clusters)) +
+  geom_point(aes(x = cutoff, y = number.of.clusters, col = "red")) +
+  labs(x = "Cutoff", y = "Number of clusters", title = "Phylogenetic distances (amino acids, cleaned/gaps removed)") +
+  theme(legend.position = "none")
+
+aa.clean.phyl.plateau + geom_vline(xintercept = aa.clean.phyl.plateau.cutoffs, linetype="dashed", alpha = .3, size = .3) +
+  geom_hline(yintercept = aa.clean.phyl.optimal.cluster.numbers, linetype="dashed", alpha = .3, size = .3)
+```
+

@@ -1,0 +1,14 @@
+#Cluster analysis env
+channels:
+  - defaults
+  - bioconda
+  - conda-forge
+
+dependencies:
+  - python=3.5.2
+  - snakemake=4.3.1
+  - blast=2.7.1
+  - mafft=7.310
+  - iqtree=1.5.5
+  - graphviz=2.38.0-7
+  - bzip2=1.0.6-1
