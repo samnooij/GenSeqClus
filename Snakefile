@@ -70,6 +70,23 @@ rule calculate_nvr_distances:
     script:
         "bin/NVR.R"
 
+### kmer frequencies ###
+
+import os
+BASE_PATH = os.path.realpath("")
+
+rule calculate_kmer_frequencies:
+    input:
+        "data/{sample}_nt.fasta"
+    params:
+        kmers=[1, 2, 3, 4, 5],
+        wd=BASE_PATH
+    output:
+        [''.join(["tmp/{sample}_nt_", str(kmer), "mers.csv"]) for kmer in [1, 2, 3, 4, 5]]
+    conda:
+        "envs/cluster_analysis_py27.yaml"
+    script:
+        "bin/kmer_frequencies.R"
 
 ### ML PHYLOGENY ###
 
