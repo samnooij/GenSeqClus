@@ -72,15 +72,11 @@ rule calculate_nvr_distances:
 
 ### kmer frequencies ###
 
-import os
-BASE_PATH = os.path.realpath("")
-
 rule calculate_kmer_frequencies:
     input:
         "data/{sample}_nt.fasta"
     params:
-        kmers=[1, 2, 3, 4, 5],
-        wd=BASE_PATH
+        kmers=[1, 2, 3, 4, 5]
     output:
         [''.join(["tmp/{sample}_nt_", str(kmer), "mers.csv"]) for kmer in [1, 2, 3, 4, 5]]
     conda:
