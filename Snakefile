@@ -170,19 +170,14 @@ rule infer_phylogeny_cds:
 #Install one required R package that is not in conda:
 #R: "install.packages("directlabels", repo="http://r-forge.r-project.org")"
 
-#Little hack to pass absolute file paths to R Markdown,
-# which is apparently necessary.
-import os
-BASE_PATH = os.path.realpath("")
-
 rule cluster_analysis:
     input:
-        BASE_PATH + "/tmp/{sample}_tblastn_aa.blast",
-        BASE_PATH + "/tmp/{sample}_nt.nvr",
-        BASE_PATH + "/tmp/{sample}-mafft_aa.fas.mldist",
-        BASE_PATH + "/tmp/{sample}-mafft-RevTrans_aa.fas.mldist",
-        BASE_PATH + "/tmp/{sample}-mafft-Gblocks-mafft_aa.fas.mldist",
-        BASE_PATH + "/data/{sample}_metadata.tsv"
+        "tmp/{sample}_tblastn_aa.blast",
+        "tmp/{sample}_nt.nvr",
+        "tmp/{sample}-mafft_aa.fas.mldist",
+        "tmp/{sample}-mafft-RevTrans_aa.fas.mldist",
+        "tmp/{sample}-mafft-Gblocks-mafft_aa.fas.mldist",
+        "data/{sample}_metadata.tsv"
     output:
         "results/{sample}-Cluster_Analysis.html"
     conda:
