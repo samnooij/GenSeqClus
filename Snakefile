@@ -22,6 +22,7 @@ analysed using custom R code, visualised using RMarkdown.
 """
 
 SAMPLES = ["SaV_genomes", "SaV_VP1"]
+KMERS = [1, 2, 3, 4, 5]
 
 localrules: calculate_nvr_distances, cluster_analysis
 
@@ -76,13 +77,23 @@ rule calculate_kmer_frequencies:
     input:
         "data/{sample}_nt.fasta"
     params:
-        kmers=[1, 2, 3, 4, 5]
+        kmers=KMERS
     output:
-        [''.join(["tmp/{sample}_nt_", str(kmer), "mers.csv"]) for kmer in [1, 2, 3, 4, 5]]
+        [''.join(["tmp/{sample}_nt_", str(kmer), "mers.csv"]) for kmer in KMERS]
     conda:
         "envs/cluster_analysis_py27.yaml"
     script:
         "bin/kmer_frequencies.R"
+
+rule convert_kmer_frequencies_to_distances:
+    input:
+        [''.join(["tmp/{sample}_nt_", str(kmer), "mers.csv"]) for kmer in KMERS]
+    output:
+        [''.join(["tmp/{sample}_nt_", str(kmer), "mer_distances.csv"]) for kmer in KMERS]
+    conda:
+        "envs/cluster_analysis_py27.yaml"
+    script:
+        "bin/kmer_distances.R"
 
 ### ML PHYLOGENY ###
 
