@@ -10,7 +10,10 @@ library(reshape2)
 frequencies_df_list <- snakemake@input[[1]]
 
 for (frequencies_df in frequencies_df_list) {
-  distances <- dist(x = frequencies_df, method = "euclidean")
+  frequencies_df <- read.csv(frequencies_df, header = TRUE, sep = ",")
+  distances <- as.matrix(dist(x = frequencies_df, method = "euclidean"))
+  rownames(distances) <- frequencies_df$name
+  colnames(distances) <- frequencies_df$name
   
   # Extract the index by checking which value (index) in the list
   # matches the current dataframe:
