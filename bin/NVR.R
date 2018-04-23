@@ -1,4 +1,4 @@
-# Custom implementation of NVR (Natural Vector)
+# Implementation of NVR (Natural Vector) in R
 # Yu et al., 2013. PLoS ONE, Real Time Classification of Viruses in 12 Dimensions
 # DOI: 10.1371/journal.pone.0064328
 

@@ -7,16 +7,17 @@ Title: Sapovirus Cluster Analysis
 This snakemake workflow analyses clusters in Sapovirus
 genomic sequences. The clustering is based on three (3)
 different distance measures: similarity (BLAST identity),
-composition (NVR, like in Yu et al., 2013), and phylogeny 
+composition (NVR, like in Yu et al., 2013; and oligomer
+frequency-distances: 1-5mers), and phylogeny 
 (DEmARC, like in Lauber & Gorbalenya, 2012).
-Therefore, first distances are calculated by running tBLASTn,
-a custom-made NVR script (in R), and phylogeny using a
-multiple sequence alignment from MAFFT and Maximum Likelihood
-phylogeny from IQTree.
+Therefore, distances are calculated by running tBLASTn,
+custom-made R scripts (for NVR, and the kmer frequencies), 
+and phylogeny using a multiple sequence alignment from MAFFT
+ and Maximum Likelihood phylogeny from IQTree.
 (N.B. Three multiple alignments are generated: full protein
 sequences, back-translated coding sequences, and trimmed
 protein sequences (with Gblocks, relaxed settings, like
-in Talavera & Castresana, 2007).
+in Talavera & Castresana, 2007).)
 The resulting distance values are imported into R and 
 analysed using custom R code, visualised using RMarkdown.
 """
@@ -30,7 +31,7 @@ rule all:
     input:
         expand("results/{sample}-Cluster_Analysis.html", sample = SAMPLES)
 
-### BLAST ###
+### BLAST --------------------------------------------------
 
 rule make_blastdb:
     input:
@@ -59,9 +60,9 @@ tblastn -db tmp/{wildcards.sample}_nt \
         """
         
 
-### NVR ###
+### NVR ----------------------------------------------------
 
-rule calculate_nvr_distances:
+rule calculate_nvr:
     input:
         "data/{sample}_nt.fasta"
     output:
@@ -71,7 +72,19 @@ rule calculate_nvr_distances:
     script:
         "bin/NVR.R"
 
-### kmer frequencies ###
+rule convert_nvr_to_distances:
+    input:
+        "tmp/{sample}_nt.nvr"
+    output:
+        matrix="tmp/{sample}_nt_nvr_distances.RDS",
+        dataframe="tmp/{sample}_nt_nvr_distances.csv"
+    conda:
+        "envs/cluster_analysis_py27.yaml"
+    script:
+        "bin/euclidean_distances.R"
+
+
+### kmer frequencies ---------------------------------------
 
 rule calculate_kmer_frequencies:
     input:
@@ -79,23 +92,25 @@ rule calculate_kmer_frequencies:
     params:
         kmers=KMERS
     output:
-        [''.join(["tmp/{sample}_nt_", str(kmer), "mers.csv"]) for kmer in KMERS]
+        [''.join(["tmp/{sample}_nt_", str(kmer), "mers.csv"]) for kmer in KMERS]        
     conda:
         "envs/cluster_analysis_py27.yaml"
     script:
         "bin/kmer_frequencies.R"
 
-rule convert_kmer_frequencies_to_distances:
+rule convert_kmers_to_distances:
     input:
-        [''.join(["tmp/{sample}_nt_", str(kmer), "mers.csv"]) for kmer in KMERS]
+        [''.join(["tmp/{sample}_nt_", str(kmer), "mers.csv"]) for kmer in KMERS]        
     output:
-        [''.join(["tmp/{sample}_nt_", str(kmer), "mer_distances.csv"]) for kmer in KMERS]
+        matrix=[''.join(["tmp/{sample}_nt_", str(kmer), "mer_distances.RDS"]) for kmer in KMERS],
+        dataframe=[''.join(["tmp/{sample}_nt_", str(kmer), "mer_distances.csv"]) for kmer in KMERS]
     conda:
         "envs/cluster_analysis_py27.yaml"
     script:
-        "bin/kmer_distances.R"
+        "bin/euclidean_distances.R"
 
-### ML PHYLOGENY ###
+
+### ML PHYLOGENY -------------------------------------------
 
 rule make_multiple_alignment:
     input:
@@ -138,7 +153,7 @@ rule backtranslate:
         python {input.cor} {output}
         """
 
-#Sometimes, RevTrans returns a multiple alignment with 
+#Sometimes RevTrans returns a multiple alignment with 
 # sequences of differing lengths. The second script adds
 # gaps "-" to the end of shorter sequences to fix this.
 
@@ -189,7 +204,7 @@ rule infer_phylogeny_cds:
     shell:
         "iqtree {params.test} {params.bootstrap} -nt {threads} -s {input}"
 
-### CLUSTER ANALYSIS ###
+### CLUSTER ANALYSIS ---------------------------------------
 
 #Install one required R package that is not in conda:
 #R: "install.packages("directlabels", repo="http://r-forge.r-project.org")"
@@ -208,3 +223,13 @@ rule cluster_analysis:
         "envs/cluster_analysis_py27.yaml"
     script:
         "bin/Cluster_analysis.Rmd"
+
+rule create_cluster_report:
+    input:
+        ""
+    output:
+        ".html"
+    conda:
+        "envs/cluster_analysis_py27.yaml"
+    script:
+        "bin/Cluster_analysis_visualisation.Rmd"
