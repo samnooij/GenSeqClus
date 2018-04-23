@@ -5,7 +5,7 @@
 
 # Sam Nooij, 13 April 2018
 
-library(reshape2)
+library(reshape2) # for melting the matrix into a dataframe
 
 frequencies_df_list <- snakemake@input[[1]]
 
