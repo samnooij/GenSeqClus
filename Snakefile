@@ -211,18 +211,23 @@ rule infer_phylogeny_cds:
 
 rule cluster_analysis:
     input:
-        "tmp/{sample}_tblastn_aa.blast",
-        "tmp/{sample}_nt.nvr",
-        "tmp/{sample}-mafft_aa.fas.mldist",
-        "tmp/{sample}-mafft-RevTrans_aa.fas.mldist",
-        "tmp/{sample}-mafft-Gblocks-mafft_aa.fas.mldist",
-        "data/{sample}_metadata.tsv"
+        blast="tmp/{sample}_tblastn_aa.blast",
+        nvr_mat="tmp/{sample}_nt_nvr_distances.RDS",
+        nvr_df="tmp/{sample}_nt.nvr",
+        kmer_dfs=expand("{sample}_nt_{kmer}mer_distances.csv", kmer = KMERS),
+        kmer_mats=expand("{sample}_nt_{kmer}mer_distances.RDS", kmer = KMERS),
+        aa_ml="tmp/{sample}-mafft_aa.fas.mldist",
+        nt_ml="tmp/{sample}-mafft-RevTrans_aa.fas.mldist",
+        aa_ml_clean="tmp/{sample}-mafft-Gblocks-mafft_aa.fas.mldist",
+        metadata="data/{sample}_metadata.tsv"
     output:
         "results/{sample}-Cluster_Analysis.html"
     conda:
         "envs/cluster_analysis_py27.yaml"
     script:
         "bin/Cluster_analysis.Rmd"
+        #"bin/cluster_annotated_sequences.R"
+        #replace by newer script??
 
 rule create_cluster_report:
     input:
