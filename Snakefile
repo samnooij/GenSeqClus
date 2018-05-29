@@ -221,19 +221,19 @@ rule cluster_analysis:
         aa_ml_clean="tmp/{sample}-mafft-Gblocks-mafft_aa.fas.mldist",
         metadata="data/{sample}_metadata.tsv"
     output:
-        "results/{sample}-Cluster_Analysis.html"
+        blast="tmp/{sample}_blast_clustering_results.csv"
     conda:
         "envs/cluster_analysis_py27.yaml"
     script:
-        "bin/Cluster_analysis.Rmd"
-        #"bin/cluster_annotated_sequences.R"
-        #replace by newer script??
+        "bin/cluster_annotated_sequences.R"
 
 rule create_cluster_report:
     input:
         ""
+#all the different "_clustering_results.csv" files
     output:
         ".html"
+#separate reports? one big report?
     conda:
         "envs/cluster_analysis_py27.yaml"
     script:
