@@ -29,7 +29,7 @@ localrules: calculate_nvr_distances, cluster_analysis
 
 rule all:
     input:
-        expand("results/{sample}-Cluster_Analysis.html", sample = SAMPLES)
+        expand("tmp/{sample}_blast_clustering_results.csv", sample = SAMPLES)
 
 ### BLAST --------------------------------------------------
 
@@ -88,11 +88,11 @@ rule convert_nvr_to_distances:
 
 rule calculate_kmer_frequencies:
     input:
-        "data/{sample}_nt.fasta"
+        expand("data/{sample}_nt.fasta", sample = SAMPLES)
     params:
         kmers=KMERS
     output:
-        [''.join(["tmp/{sample}_nt_", str(kmer), "mers.csv"]) for kmer in KMERS]        
+        expand("tmp/{sample}_nt_{kmer}mers.csv", sample = SAMPLES, kmer = KMERS)
     conda:
         "envs/cluster_analysis_py27.yaml"
     script:
@@ -100,10 +100,10 @@ rule calculate_kmer_frequencies:
 
 rule convert_kmers_to_distances:
     input:
-        [''.join(["tmp/{sample}_nt_", str(kmer), "mers.csv"]) for kmer in KMERS]        
+        expand("tmp/{sample}_nt_{kmer}mers.csv", sample = SAMPLES, kmer = KMERS)
     output:
-        matrix=[''.join(["tmp/{sample}_nt_", str(kmer), "mer_distances.RDS"]) for kmer in KMERS],
-        dataframe=[''.join(["tmp/{sample}_nt_", str(kmer), "mer_distances.csv"]) for kmer in KMERS]
+        matrix=expand("tmp/{sample}_nt_{kmer}mer_distances.RDS", sample = SAMPLES, kmer = KMERS),
+        dataframe=expand("tmp/{sample}_nt_{kmer}mer_distances.csv", sample = SAMPLES, kmer = KMERS)
     conda:
         "envs/cluster_analysis_py27.yaml"
     script:
@@ -214,8 +214,8 @@ rule cluster_analysis:
         blast="tmp/{sample}_tblastn_aa.blast",
         nvr_mat="tmp/{sample}_nt_nvr_distances.RDS",
         nvr_df="tmp/{sample}_nt.nvr",
-        kmer_dfs=expand("{sample}_nt_{kmer}mer_distances.csv", kmer = KMERS, sample = SAMPLES),
-        kmer_mats=expand("{sample}_nt_{kmer}mer_distances.RDS", kmer = KMERS, sample = SAMPLES),
+        kmer_dfs=expand("tmp/{sample}_nt_{kmer}mer_distances.csv", kmer = KMERS, sample = SAMPLES),
+        kmer_mats=expand("tmp/{sample}_nt_{kmer}mer_distances.RDS", kmer = KMERS, sample = SAMPLES),
         aa_ml="tmp/{sample}-mafft_aa.fas.mldist",
         nt_ml="tmp/{sample}-mafft-RevTrans_aa.fas.mldist",
         aa_ml_clean="tmp/{sample}-mafft-Gblocks-mafft_aa.fas.mldist",
