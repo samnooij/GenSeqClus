@@ -16,9 +16,12 @@
 # clustering accordance, clustering cost, clustering quality(?),
 # dunn index, which sequences were put in which cluster
 
+### REQUIRED LIBRARIES ----------------------------------------------
+library(reshape2) #for converting distance matrices - dataframes
+library(dplyr) #for merging multiple dataframes
+
 
 ### READ INPUT FILES ------------------------------------------------
-
 
 blast_df <- read.csv(snakemake@input[["blast"]],
   header = FALSE, sep = "\t")
@@ -31,73 +34,91 @@ blast_df <- within(blast_df, blast.distance <- 100 - identity)
 nvr_dist_mat <- readRDS(snakemake@input[["nvr_mat"]])
 nvr_dist_df <- read.csv(snakemake@input[["nvr_df"]],
   header = TRUE, sep = ",")
+nvr_df <- melt(nvr_dist_mat)
+colnames(nvr_df) <- c("query", "target", "nvr.distance")
 
 ## Note that there are multiple files for kmers, one for each k!
 kmer_dist_mat <- readRDS(snakemake@input[["kmer_mat"]])
 kmer_dist_df <- read.csv(snakemake@input[["kmer_df"]], 
   header = TRUE, sep = ",")
 
-aa_ml_df <- read.csv(snakemake@input[["aa_ml"]], 
+aa_ml_mat <- read.csv(snakemake@input[["aa_ml"]], 
   header = FALSE, sep = "", skip = 1, row.names = 1)
-nt_ml_df <- read.csv(snakemake@input[["nt_ml"]], 
+aa_ml_df <- melt(as.matrix(aa_ml_mat))
+colnames(aa_ml_df) <- c("query", "target", "aa.ml.distance")
+
+nt_ml_mat <- read.csv(snakemake@input[["nt_ml"]], 
   header = FALSE, sep = "", skip = 1, row.names = 1)
-aa_ml_clean_df <- read.csv(snakemake@input[["aa_ml_clean"]], 
+nt_ml_df <- melt(as.matrix(nt_ml_mat))
+colnames(nt_ml_df) <- c("query", "target", "nt.ml.distance")
+
+aa_ml_clean_mat <- read.csv(snakemake@input[["aa_ml_clean"]], 
   header = FALSE, sep = "", skip = 1, row.names = 1)
+aa_ml_clean_df <- melt(as.matrix(aa_ml_clean_mat))
+colnames(aa_ml_clean_df) <- c("query", "target", "aa.ml.clean.distance")
 
 metadata_df <- read.csv(snakemake@input[["metadata"]],
   header = TRUE, sep = "\t")
 
-###TESTING/DEBUGGING:
+###TESTING/DEBUGGING: ===============================================
 setwd("/data/sapo/experiments/compare_clustering_methods/")
 blast_df <- read.csv("tmp/SaV_genomes_tblastn_aa.blast", header = FALSE, sep = "\t")
 column.names <-  c("query", "target", "identity", 
-  "length", "mismatches", "gap.openings", "q.start", 
-  "q.end", "t.start", "t.end", "evalue", "bit.score")
+  "length", "mismatches", "gap_openings", "q.start", 
+  "q.end", "t.start", "t.end", "evalue", "bitscore")
 colnames(blast_df) <- column.names
 blast_df <- within(blast_df, blast.distance <- 100 - identity)
 
 nvr_dist_mat <- readRDS("tmp/SaV_genomes_nt_nvr_distances.RDS")
-nvr_df <- read.csv("tmp/SaV_genomes_nt.nvr")
+nvr_df <- melt(nvr_dist_mat)
+colnames(nvr_df) <- c("query", "target", "nvr_distance")
 
+### make a for-loop for kmers?
 
+aa_ml_mat <- read.csv("tmp/SaV_genomes-mafft_aa.fas.mldist",
+  header = FALSE, sep = "", skip = 1, row.names = 1)
+colnames(aa_ml_mat) <- rownames(aa_ml_mat)
+aa_ml_df <- melt(as.matrix(aa_ml_mat))
+colnames(aa_ml_df) <- c("query", "target", "aa_ml_distance")
 
+nt_ml_mat <- read.csv("tmp/SaV_genomes-mafft-RevTrans_aa.fas.mldist",
+  header = FALSE, sep = "", skip = 1, row.names = 1)
+colnames(nt_ml_mat) <- rownames(nt_ml_mat)
+nt_ml_df <- melt(as.matrix(nt_ml_mat))
+colnames(nt_ml_df) <- c("query", "target", "nt_ml_distance")
 
-# note to self: do I need to merge the dataframes?
-# I probably only need to add metadata to each one...
-# Copied function:
-merge.dataframes <- function(blast, nvr, aa.phyl, nt.phyl, aa.clean.phyl, meta) {
-  #First merger: blast output + metadata
-  bl.meta <- merge.data.frame(x = blast, y = meta, by.x = "query", by.y = "accession_id", all = FALSE)
+aa_ml_clean_mat <- read.csv("tmp/SaV_genomes-mafft-Gblocks-mafft_aa.fas.mldist",
+  header = FALSE, sep = "", skip = 1, row.names = 1)
+colnames(aa_ml_clean_mat) <- rownames(aa_ml_clean_mat)
+aa_ml_clean_df <- melt(as.matrix(aa_ml_clean_mat))
+colnames(aa_ml_clean_df) <- c("query", "target", "aa_ml_clean_distance")
+
+metadata_df <- read.csv("data/SaV_genomes_metadata.tsv",
+  header = TRUE, sep = "\t")
+
+sample <- "SaV_genomes"
+
+### END OF DATA IMPORTS =============================================
+
+distances.df <- list(blast_df, nvr_df, aa_ml_df, nt_ml_df, aa_ml_clean_df) %>%
+  Reduce(function(df1,df2) full_join(df1, df2, by = c("query", "target")), .)
+distances.df <- merge.data.frame(x = distances.df, y = metadata_df, by.x = "query", by.y = "accession_id")
+
+#Distances are all columns that contain "distance"
+distances <- Filter(function(x) grepl("distance", x), colnames(distances.df))
+
+#For all distances:
+for (d in distances){
+  print(d)
+  #the distance measure is the name before "distance"
+  measure <- sub("*.distance", "", d)
+  #perform the cluster analysis
+  sl_clustering <- single.linkage.clustering(df = distances.df, dist = d)
   
-  #Merge (add NVR) and rename column
-  bl.meta.nvr <- merge.data.frame(x = bl.meta, y = nvr, by.x = c("query", "target"), by.y = c("Var1", "Var2"))
-  colnames(bl.meta.nvr)[colnames(bl.meta.nvr) == "value"] <- "nvr.distance"
-  
-  #Merge (add aa phylogeny) and rename column
-  bl.meta.nvr.aa <- merge.data.frame(x = bl.meta.nvr, y = aa.phyl, by.x = c("query", "target"), by.y = c("Var1", "Var2"))
-  colnames(bl.meta.nvr.aa)[colnames(bl.meta.nvr.aa) == "value"] <- "aa.phyl.distance"
-  
-  #Merge (add nt (CDS) phylogeny) and rename column
-  bl.meta.nvr.aa.nt <- merge.data.frame(x = bl.meta.nvr.aa, y = nt.phyl, by.x = c("query", "target"), by.y = c("Var1", "Var2"))
-  colnames(bl.meta.nvr.aa.nt)[colnames(bl.meta.nvr.aa.nt) == "value"] <- "nt.phyl.distance"
-  
-  #Merge (add cleaned aa phylogeny) and rename column
-  bl.meta.nvr.aa.nt.aacl <- merge.data.frame(x = bl.meta.nvr.aa.nt, y = aa.clean.phyl, by.x = c("query", "target"), by.y = c("Var1", "Var2"))
-  colnames(bl.meta.nvr.aa.nt.aacl)[colnames(bl.meta.nvr.aa.nt.aacl) == "value"] <- "aa.clean.phyl.distance"
-  
-  return(bl.meta.nvr.aa.nt.aacl)
+  #and save the results
+  write.table(x = sl_clustering, file = paste("tmp/", sample, "_", measure, "_clustering_results.csv", sep = ""),
+    row.names = FALSE)
 }
-
-# debugging:
-blast_df <- read.csv("tmp/SaV_genomes_tblastn_aa.blast", header = FALSE, sep = "\t")
-nvr_dist_df <- read.csv("tmp/SaV_genomes_nt_nvr_distances.csv", header = TRUE, sep = ",")
-kmer_dist_df <- read.csv("tmp/SaV_genomes_nt_1mer_distances.csv", header = TRUE, sep = ",")
-aa_ml_df <- read.csv("tmp/SaV_genomes-mafft_aa.fas.mldist", header = FALSE, sep = "", skip = 1, row.names = 1)
-#nt_ml_df <- read.csv("tmp/SaV_genomes", header = FALSE, sep = "", skip = 1, row.names = 1)
-#aa_ml_clean_df <- read.csv("tmp/SaV_genomes-mafft_aa.fas.mldist", header = FALSE, sep = "", skip = 1, row.names = 1)
-metadata_df <- read.csv("data/SaV_genomes_metadata.tsv", header = TRUE, sep = "\t")
-
-
 ### CLUSTER ANALYSIS FUNCTIONS --------------------------------------
 
 
